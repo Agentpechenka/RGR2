@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pipeline Runner</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.5/codemirror.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.5/theme/material.min.css">
+    <style>
+        /* Global Styles */  
+  
+* {  
+  box-sizing: border-box;  
+  margin: 0;  
+  padding: 0;  
+}  
+  
+body {  
+  -ms-overflow-style: none;  
+  font-family: Arial, sans-serif;  
+  line-height: 1.6;  
+  color: #fff;  
+  background-color: #1a1d23;  
+  padding: 20px;  
+}  
+
+/* Code Editor Styles */  
+  
+#code-editor {
+            height: 300px;
+            border: 1px solid #ff00ea;
+        }  
+  
+/* Button Styles */  
+  
+button {  
+  background-color: #343a40;  
+  border-radius: 10px;
+  color: #fff;  
+  border: none;  
+  padding: 10px 20px;  
+  font-size: 1em;  
+  cursor: pointer;  
+  margin-top: 50px;
+  transition: 0.5s;
+}  
+  
+button:hover {  
+  background-color: #490049;  
+}  
+  
+/* Output and Error Log Styles */  
+  
+.output, .error-log {  
+  background-color: #2b2b2b;  
+  padding: 10px;  
+  border: 1px solid #343a40;  
+  white-space: pre-wrap;  
+}  
+
+.pipeline-status {  
+  margin-top: 20px;  
+}  
+  
+.pipeline-status ul {  
+  list-style: none;  
+  padding: 0;  
+  margin: 0;  
+}  
+  
+.pipeline-status li {  
+  padding: 10px;  
+  border-bottom: 1px solid #343a40;  
+}  
+  
+.pipeline-status li:last-child {  
+  border-bottom: none;  
+}  
+  
+.execution-time {  
+  margin-top: 20px;  
+}  
+  
+.execution-time p {  
+  font-size: 1.2em;  
+}
+ 
+::-webkit-scrollbar {  
+  width: 10px;  
+  height: 10px;  
+}  
+  
+::-webkit-scrollbar-thumb {  
+  background-color: #343a40;  
+  border-radius: 10px;  
+  box-shadow: inset 0 0 6px rgba(0, 0, 0, 0.3);  
+}  
+  
+::-webkit-scrollbar-thumb:hover {  
+  background-color: #444;  
+}  
+  
+::-webkit-scrollbar-track {  
+  background-color: #2b2b2b;  
+  border-radius: 10px;  
+  box-shadow: inset 0 0 6px rgba(0, 0, 0, 0.3);  
+}  
+  
+::-webkit-scrollbar-corner {  
+  background-color: #2b2b2b;  
+}  
+
+* {  
+  scrollbar-width: thin;  
+  scrollbar-color: #343a40 #2b2b2b;  
+}  
+
+::-webkit-scrollbar-button {  
+  display: none;  
+}  
+  
+::-webkit-scrollbar-button:start:decrement,  
+::-webkit-scrollbar-button:end:increment {  
+  display: block;  
+  height: 10px;  
+  background-color: #343a40;  
+  border-radius: 10px;  
+  box-shadow: inset 0 0 6px rgba(0, 0, 0, 0.3);  
+}
+    </style>
+</head>
+<body>
+    <div class="pipeline-runner">
+        <h1>Interpretator</h1>
+        <div id="code-editor"></div>
+        <button id="run-button">Запустить пайплайн</button>
+        <div style="margin-top: 20px;">
+            <h3>Вывод:</h3>
+            <pre id="output" class="output"></pre>
+        </div>
+        <div>
+            <h3>Ошибки / Логи:</h3>
+            <pre id="error-log" class="error-log"></pre>
+        </div>
+        <div class="execution-time">
+            <h3>Время выполнения:</h3>
+            <p id="execution-time">N/A</p>
+        </div>
+        <div id="pipeline-status" class="pipeline-status" style="display: none;">
+            <h3>Статус пайплайна:</h3>
+            <ul id="status-list"></ul>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.5/codemirror.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.5/mode/python/python.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const editor = CodeMirror(document.getElementById('code-editor'), {
+                lineNumbers: true,
+                mode: 'python',
+                theme: 'material',
+                indentUnit: 4,
+            });
+
+            const runButton = document.getElementById('run-button');
+            const outputElement = document.getElementById('output');
+            const errorLogElement = document.getElementById('error-log');
+            const executionTimeElement = document.getElementById('execution-time');
+            const pipelineStatusElement = document.getElementById('pipeline-status');
+            const statusListElement = document.getElementById('status-list');
+
+            let pipelineStatusInterval;
+
+            const fetchPipelineStatus = async (userId) => {
+                pipelineStatusInterval = setInterval(async () => {
+                    try {
+                        const response = await axios.get('http://localhost:3000/pipeline');
+                        const status = response.data;
+
+                        if (status.output) {
+                            outputElement.textContent = status.output;
+                        }
+
+                        statusListElement.innerHTML = '';
+                        status.stages.forEach((stage) => {
+                            const li = document.createElement('li');
+                            li.textContent = `${stage.name}: ${stage.status} (${stage.duration}s)`;
+                            statusListElement.appendChild(li);
+                        });
+
+                        pipelineStatusElement.style.display = 'block';
+
+                        if (status.stages.every(stage => stage.status === 'success' || stage.status === 'failure')) {
+                            clearInterval(pipelineStatusInterval);
+                            if (status.stats.failure_count > 0) {
+                                errorLogElement.textContent = 'Некоторые этапы завершились с ошибкой.';
+                            }
+                        }
+                    } catch (error) {
+                        clearInterval(pipelineStatusInterval);
+                        errorLogElement.textContent = 'Ошибка при получении статуса пайплайна.';
+                    }
+                }, 2000);
+            };
+
+            runButton.addEventListener('click', async () => {
+                const code = editor.getValue();
+                if (!code) {
+                    alert('Введите код для выполнения');
+                    return;
+                }
+
+                const startTime = performance.now();
+                errorLogElement.textContent = '';
+                outputElement.textContent = '';
+
+                try {
+                    const response = await axios.post(
+                        'http://localhost:3000/start_compile',
+                        { code },
+                        { headers: { 'Content-Type': 'application/json' } }
+                    );
+
+                    const data = response.data;
+                    if (data.status === 'Compilation started') {
+                        fetchPipelineStatus(data.user_id);
+                    } else {
+                        errorLogElement.textContent = data.message || 'Ошибка запуска';
+                    }
+                } catch (error) {
+                    errorLogElement.textContent = `Ошибка соединения: ${error.message}`;
+                } finally {
+                    const endTime = performance.now();
+                    executionTimeElement.textContent = `${(endTime - startTime).toFixed(2)} ms`;
+                }
+            });
+        });
+    </script>
+</body>
+</html>
